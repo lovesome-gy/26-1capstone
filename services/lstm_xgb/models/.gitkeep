@@ -1,0 +1,9 @@
+# 이 폴더에 김민준 모델 파일을 복사하세요:
+# total_scaler.pkl
+# target_scaler.pkl
+# yeoju_lstm_model.keras
+# yeoju_xgb_model.pkl
+# yeoju_lstm_model_1h.keras
+# yeoju_xgb_model_1h.pkl
+# yeoju_lstm_model_3h.keras
+# yeoju_xgb_model_3h.pkl

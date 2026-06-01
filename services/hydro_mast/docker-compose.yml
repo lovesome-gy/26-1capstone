@@ -1,0 +1,11 @@
+services:
+  hydro-mast-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hydro-mast-api
+    ports:
+      - "8787:8787"
+    env_file:
+      - .env
+    restart: unless-stopped

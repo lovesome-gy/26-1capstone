@@ -1,0 +1,26 @@
+# LLM Service (Part④) - 신가연
+# Python 3.11+
+
+# ── Web Framework ────────────────────────────────────────────
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# ── Database ─────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0             # PostgreSQL 비동기 드라이버
+
+# ── Config ───────────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# ── HTTP Client (Ollama 통신) ─────────────────────────────────
+httpx==0.27.2
+
+# ── Utilities ────────────────────────────────────────────────
+python-multipart==0.0.12    # FastAPI 파일 업로드 지원
+
+# ── Scripts (load_data.py, check_db.py) ──────────────────────
+psycopg2-binary==2.9.10     # PostgreSQL 동기 드라이버 (스크립트용)
+pandas==2.2.3               # CSV 처리
+pytz==2024.2                # 타임존 처리

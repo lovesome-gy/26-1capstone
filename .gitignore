@@ -1,0 +1,19 @@
+.env
+data/
+*.pyc
+__pycache__/
+.venv/
+*.pt
+*.pth
+services/model_trainer/artifacts/
+
+# 모델 아티팩트 (용량 크므로 제외)
+*.pt
+*.pkl
+services/hydro_mast/04_artifacts/
+
+services/hydro_mast/04_artifacts/data/features_v2_train.csv
+services/hydro_mast/04_artifacts/data/features_v2_test.csv
+services/lstm_xgb/models/*.pkl
+services/lstm_xgb/models/*.keras
+services/lstm_xgb/models/*.csv

@@ -1,0 +1,187 @@
+version: "3.9"
+
+name: yeoju-water-ai
+
+services:
+
+  # ── 1. PostgreSQL (TimescaleDB) ──────────────────────────
+  postgres:
+    image: timescale/timescaledb:latest-pg15
+    container_name: yeoju_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-yeoju_water}
+      POSTGRES_USER: ${POSTGRES_USER:-yeoju_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-yeoju_admin} -d ${POSTGRES_DB:-yeoju_water}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yeoju_net
+
+  # ── 2. Ollama (LLM 서빙) ────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: yeoju_ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    # deploy:                   ← 학교 RTX 5090 서버에서만 활성화
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - yeoju_net
+
+  # ── 3. Hydro-MAST 예측 서버 (정휘수) ────────────────────
+  # services/hydro_mast/ 에 flood-forecast-project 내용 복사
+  hydro_mast:
+    build:
+      context: ./services/hydro_mast
+      dockerfile: Dockerfile
+    container_name: yeoju_hydro_mast
+    restart: unless-stopped
+    environment:
+      - SKIP_API=${SKIP_API:-true}
+      - HRFC_API_KEY=${HRFC_API_KEY:-}
+      - KWATER_API_KEY=${KWATER_API_KEY:-}
+    ports:
+      - "8787:8787"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8787/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yeoju_net
+
+  # ── 4. LSTM/XGB 예측 서버 (김민준) ──────────────────────
+  # services/lstm_xgb/models/ 에 .keras/.pkl 파일 복사 필요
+  # 모델 파일 준비 전까지는 아래 주석 처리 가능
+  lstm_xgb:
+    build:
+      context: ./services/lstm_xgb
+      dockerfile: Dockerfile
+    container_name: yeoju_lstm_xgb
+    restart: unless-stopped
+    environment:
+      - HRFCO_SERVICE_KEY=${HRFCO_SERVICE_KEY:-KEY}
+      - LSTM_SERVER_URL=http://localhost:8000/predict
+      - COLLECT_INTERVAL=600
+    volumes:
+      - ./services/lstm_xgb/models:/app/models
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - yeoju_net
+
+  # ── 5. Predictor 어댑터 (신가연) ────────────────────────
+  # Hydro-MAST + LSTM/XGB → 내부 표준 스키마 변환
+  # DEFAULT_MODEL=hydro_mast|lstm_xgb|both
+  predictor:
+    build:
+      context: ./services/predictor
+      dockerfile: Dockerfile
+    container_name: yeoju_predictor
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - HYDRO_MAST_URL=http://hydro_mast:8787
+      - LSTM_XGB_URL=http://lstm_xgb:8000
+      - SKIP_API=${SKIP_API:-true}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-hydro_mast}
+    depends_on:
+      hydro_mast:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    networks:
+      - yeoju_net
+
+  # ── 6. LLM Service (신가연 - Part④) ────────────────────
+  llm_service:
+    build:
+      context: ./services/llm_service
+      dockerfile: Dockerfile
+    container_name: yeoju_llm_service
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    ports:
+      - "8002:8002"
+    networks:
+      - yeoju_net
+
+  # ── 7. Frontend (Streamlit) ─────────────────────────────
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile
+    container_name: yeoju_frontend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - LLM_SERVICE_URL=http://llm_service:8002
+      - PREDICTOR_URL=http://predictor:8001
+    depends_on:
+      - predictor
+      - llm_service
+    ports:
+      - "8501:8501"
+    networks:
+      - yeoju_net
+
+# ── 8. Data Collector (신가연) ───────────────────────────
+  data_collector:
+    build:
+      context: ./services/data_collector
+      dockerfile: Dockerfile
+    container_name: yeoju_data_collector
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - HRFCO_SERVICE_KEY=${HRFCO_SERVICE_KEY:-}
+      - DATA_GO_KR_SERVICE_KEY=${DATA_GO_KR_SERVICE_KEY:-}
+      - SKIP_API=${SKIP_API:-true}
+      - COLLECT_INTERVAL=600
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - yeoju_net
+
+volumes:
+  postgres_data:
+  ollama_data:
+
+networks:
+  yeoju_net:
+    driver: bridge
